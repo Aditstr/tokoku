@@ -1,5 +1,6 @@
 const prisma = require('../../lib/prisma');
 const AppError = require('../../lib/AppError');
+const { cloudinary } = require('../../lib/cloudinary');
 
 // Ambil semua produk (publik)
 // Support filter by category, search by name, dan pagination
@@ -186,7 +187,9 @@ async function updateProduct(productId, sellerId, data) {
 
 // Hapus produk (hanya seller pemilik)
 async function deleteProduct(productId, sellerId) {
-  const product = await prisma.product.findUnique({ where: { id: productId } });
+  const product = await prisma.product.findUnique({
+    where: { id: productId },
+  });
 
   if (!product) {
     throw new AppError('PRODUCT_NOT_FOUND', 'Produk tidak ditemukan', 404);
@@ -196,8 +199,21 @@ async function deleteProduct(productId, sellerId) {
     throw new AppError('FORBIDDEN', 'Kamu tidak punya akses ke produk ini', 403);
   }
 
-  // Soft delete — set isActive false, data tidak hilang dari database
-  // Lebih aman daripada hard delete karena produk mungkin sudah ada di order
+  // Hapus gambar dari Cloudinary kalau ada
+  if (product.imageUrl) {
+    try {
+      // Extract public_id dari URL Cloudinary
+      const parts = product.imageUrl.split('/');
+      const filename = parts[parts.length - 1].split('.')[0];
+      const folder = parts[parts.length - 2];
+      const public_id = `${folder}/${filename}`;
+      await cloudinary.uploader.destroy(public_id);
+    } catch {
+      // Kalau gagal hapus gambar, tetap lanjut hapus produk
+      console.error('Gagal hapus gambar dari Cloudinary');
+    }
+  }
+
   await prisma.product.update({
     where: { id: productId },
     data: { isActive: false },

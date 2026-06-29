@@ -11,6 +11,7 @@ const errorHandler = require('./middleware/errorHandler');
 const authRoutes    = require('./modules/auth/auth.routes');
 const productRoutes = require('./modules/product/product.routes');
 const orderRoutes   = require('./modules/order/order.routes');
+const uploadRoutes  = require('./modules/upload/upload.routes');
 
 const app = express();
 
@@ -39,6 +40,7 @@ if (process.env.NODE_ENV !== 'test') {
 app.use('/api/v1/auth',     authRateLimit, authRoutes); // ← pakai authRateLimit, bukan authLimiter
 app.use('/api/v1/products', productRoutes);
 app.use('/api/v1/orders',   orderRoutes);
+app.use('/api/v1/upload',   uploadRoutes);
 
 // ─── Health check ─────────────────────────────────────────────
 app.get('/health', async (req, res) => {
