@@ -13,6 +13,8 @@ const productRoutes = require('./modules/product/product.routes');
 const orderRoutes   = require('./modules/order/order.routes');
 const uploadRoutes  = require('./modules/upload/upload.routes');
 const paymentRoutes = require('./modules/payment/payment.routes');
+const swaggerUi = require('swagger-ui-express');
+const swaggerSpec = require('./lib/swagger');
 
 const app = express();
 
@@ -36,6 +38,11 @@ const authRateLimit = process.env.NODE_ENV !== 'test'
 if (process.env.NODE_ENV !== 'test') {
   app.use(globalLimiter);
 }
+
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+  customSiteTitle: 'TokoKu API Docs',
+}));
+
 
 // ─── Routes ──────────────────────────────────────────────────
 app.use('/api/v1/auth',     authRateLimit, authRoutes); // ← pakai authRateLimit, bukan authLimiter
