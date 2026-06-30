@@ -12,6 +12,7 @@ const authRoutes    = require('./modules/auth/auth.routes');
 const productRoutes = require('./modules/product/product.routes');
 const orderRoutes   = require('./modules/order/order.routes');
 const uploadRoutes  = require('./modules/upload/upload.routes');
+const paymentRoutes = require('./modules/payment/payment.routes');
 
 const app = express();
 
@@ -41,6 +42,7 @@ app.use('/api/v1/auth',     authRateLimit, authRoutes); // ← pakai authRateLim
 app.use('/api/v1/products', productRoutes);
 app.use('/api/v1/orders',   orderRoutes);
 app.use('/api/v1/upload',   uploadRoutes);
+app.use('/api/v1/payments', paymentRoutes);
 
 // ─── Health check ─────────────────────────────────────────────
 app.get('/health', async (req, res) => {
