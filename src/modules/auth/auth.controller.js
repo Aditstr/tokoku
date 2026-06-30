@@ -62,4 +62,24 @@ async function logout(req, res) {
   res.json({ success: true, message: 'Logout berhasil' });
 }
 
-module.exports = { register, login, refresh, logout };
+async function verifyEmail(req, res, next) {
+  try {
+    const { token } = req.query;
+    const result = await authService.verifyEmail(token);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function resendVerification(req, res, next) {
+  try {
+    const { email } = req.body;
+    const result = await authService.resendVerification(email);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { register, login, refresh, logout, verifyEmail, resendVerification };

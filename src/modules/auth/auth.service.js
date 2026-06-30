@@ -2,6 +2,8 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const prisma = require('../../lib/prisma');
 const AppError = require('../../lib/AppError');
+const crypto = require('crypto');
+const { sendVerificationEmail } = require('../../lib/email');
 
 // Helper — buat access token dan refresh token
 function generateTokens(userId, role) {
@@ -22,32 +24,44 @@ function generateTokens(userId, role) {
 
 // Register
 async function register({ name, email, password, role }) {
-  // Cek apakah email sudah dipakai
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
     throw new AppError('EMAIL_TAKEN', 'Email sudah digunakan', 409);
   }
 
-  // Hash password — JANGAN simpan plaintext
   const hashedPassword = await bcrypt.hash(password, 12);
 
-  // Simpan user baru
+  // Generate token verifikasi yang unik dan aman
+  const verificationToken = crypto.randomBytes(32).toString('hex');
+  const tokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 jam
+
   const user = await prisma.user.create({
-    data: { name, email, password: hashedPassword, role: role || 'BUYER' },
+    data: {
+      name,
+      email,
+      password: hashedPassword,
+      role: role || 'BUYER',
+      verificationToken,
+      tokenExpiresAt,
+    },
     select: { id: true, name: true, email: true, role: true, createdAt: true },
-    // select: true → field password tidak ikut di-return
   });
+
+  // Kirim email verifikasi — jangan sampai gagal kirim email menggagalkan register
+  try {
+    await sendVerificationEmail(user.email, user.name, verificationToken);
+  } catch (err) {
+    console.error('Gagal kirim email verifikasi:', err.message);
+    // Tidak throw error — user tetap berhasil register, bisa resend nanti
+  }
 
   return user;
 }
 
 // Login
 async function login({ email, password }) {
-  // Cari user berdasarkan email
   const user = await prisma.user.findUnique({ where: { email } });
 
-  // Pesan error sengaja dibuat sama untuk email salah dan password salah
-  // Supaya attacker tidak bisa tahu mana yang salah (user enumeration)
   if (!user) {
     throw new AppError('INVALID_CREDENTIALS', 'Email atau password salah', 401);
   }
@@ -55,6 +69,15 @@ async function login({ email, password }) {
   const isPasswordValid = await bcrypt.compare(password, user.password);
   if (!isPasswordValid) {
     throw new AppError('INVALID_CREDENTIALS', 'Email atau password salah', 401);
+  }
+
+  // Cek verifikasi email
+  if (!user.emailVerified) {
+    throw new AppError(
+      'EMAIL_NOT_VERIFIED',
+      'Email belum diverifikasi. Cek inbox atau spam kamu.',
+      403
+    );
   }
 
   const { accessToken, refreshToken } = generateTokens(user.id, user.role);
@@ -70,6 +93,69 @@ async function login({ email, password }) {
     refreshToken,
   };
 }
+
+async function verifyEmail(token) {
+  if (!token) {
+    throw new AppError('NO_TOKEN', 'Token verifikasi tidak ditemukan', 400);
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { verificationToken: token },
+  });
+
+  if (!user) {
+    throw new AppError('INVALID_TOKEN', 'Token verifikasi tidak valid', 400);
+  }
+
+  if (user.emailVerified) {
+    return { message: 'Email sudah terverifikasi sebelumnya' };
+  }
+
+  // Cek apakah token sudah expired
+  if (user.tokenExpiresAt && user.tokenExpiresAt < new Date()) {
+    throw new AppError(
+      'TOKEN_EXPIRED',
+      'Token verifikasi sudah kedaluwarsa. Minta kirim ulang.',
+      400
+    );
+  }
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      emailVerified: true,
+      verificationToken: null, // hapus token setelah dipakai
+      tokenExpiresAt: null,
+    },
+  });
+
+  return { message: 'Email berhasil diverifikasi. Kamu sekarang bisa login.' };
+}
+
+async function resendVerification(email) {
+  const user = await prisma.user.findUnique({ where: { email } });
+
+  if (!user) {
+    throw new AppError('USER_NOT_FOUND', 'Email tidak terdaftar', 404);
+  }
+
+  if (user.emailVerified) {
+    throw new AppError('ALREADY_VERIFIED', 'Email kamu sudah terverifikasi', 400);
+  }
+
+  const verificationToken = crypto.randomBytes(32).toString('hex');
+  const tokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { verificationToken, tokenExpiresAt },
+  });
+
+  await sendVerificationEmail(user.email, user.name, verificationToken);
+
+  return { message: 'Email verifikasi sudah dikirim ulang' };
+}
+
 
 // Refresh token — dapat access token baru tanpa login ulang
 async function refresh(refreshToken) {
@@ -94,4 +180,4 @@ async function refresh(refreshToken) {
   return { accessToken, refreshToken: newRefreshToken };
 }
 
-module.exports = { register, login, refresh };
+module.exports = { register, login, refresh, verifyEmail, resendVerification };
